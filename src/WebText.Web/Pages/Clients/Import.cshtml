@@ -1,0 +1,50 @@
+@page
+@model WebText.Web.Pages.Clients.ImportModel
+@{
+    ViewData["Title"] = "Import clients";
+}
+
+<div class="page-head">
+    <h1>Import clients</h1>
+    <div class="actions"><a class="btn subtle" href="/Clients">Back to clients</a></div>
+</div>
+
+<div class="two-col">
+    <form method="post" enctype="multipart/form-data" class="card form">
+        <label>
+            <span>CSV file</span>
+            <input type="file" name="Upload" accept=".csv,text/csv" required />
+        </label>
+        <div class="form-foot"><button class="btn primary">Import</button></div>
+
+        @if (Model.Done)
+        {
+            <div class="result">
+                <p><b>@Model.Added</b> added, <b>@Model.Updated</b> updated.</p>
+                @if (Model.Problems.Any())
+                {
+                    <ul class="error-list">
+                        @foreach (var p in Model.Problems.Take(200)) { <li>@p</li> }
+                    </ul>
+                    @if (Model.Problems.Count > 200) { <p class="muted small">…and @(Model.Problems.Count - 200) more.</p> }
+                }
+            </div>
+        }
+    </form>
+
+    <aside class="card">
+        <h3>File format</h3>
+        <p class="small">First row must be column headers. Recognised columns (any order, case-insensitive):</p>
+        <ul class="small">
+            <li><b>FirstName</b>, <b>LastName</b> — or a single <b>Name</b> column ("Jane Smith" or "Smith, Jane")</li>
+            <li><b>Mobile</b> / <b>Cell</b> / <b>Phone</b> — required; 10-digit US numbers are fine</li>
+            <li><b>Email</b> — optional</li>
+            <li><b>AccountNumber</b> / <b>ClientID</b> — optional, used to match and update existing clients</li>
+        </ul>
+        <p class="small">Existing clients are matched by account number first, then by phone + name. Most business software
+            (accounting, CRM, practice-management, point-of-sale, ticketing) can export a contact list to CSV.</p>
+        <pre class="small">FirstName,LastName,Mobile,Email,AccountNumber
+Jane,Smith,312-555-0100,jane@example.com,10045
+Bob,Jones,(773) 555-0199,,10046</pre>
+    </aside>
+</div>

@@ -1,0 +1,112 @@
+@page
+@model WebText.Web.Pages.Account.ProfileModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "My account";
+    string? Err(string k) => Model.Errors.TryGetValue(k, out var e) ? e : null;
+}
+
+<div class="page-head"><h1>My account</h1></div>
+
+@if (Model.Me is not { } me)
+{
+    <div class="card"><p>You're signed in with your Windows account (<b>@User.Identity?.Name</b>). Your password and
+        sign-in are managed by Windows / Active Directory, not by this app.</p></div>
+}
+else
+{
+    <p class="muted">Signed in as <b>@me.UserName</b> · groups: @(Model.MyGroups.Any() ? string.Join(", ", Model.MyGroups) : "none")
+        · password last changed @(me.PasswordChangedAtUtc is { } pc ? Time.Local(pc, "M/d/yyyy") : "never")</p>
+    <p class="muted small">Each change below needs the current 6-digit code from your authenticator app.</p>
+
+    <div class="two-col">
+        <div>
+            @if (Model.NewAuthToken != null)
+            {
+                <form method="post" asp-page-handler="ConfirmAuthenticator" class="card form" id="auth">
+                    <h3>Set up your new authenticator</h3>
+                    @if (Err("auth") is { } ea) { <div class="flash error">@ea</div> }
+                    <partial name="_AuthenticatorSetup" model="(Model.NewAuthUri!, Model.NewAuthKey!)" />
+                    <input type="hidden" name="Token" value="@Model.NewAuthToken" />
+                    <label><span>Code from the NEW entry in your app</span>
+                        <input name="Code" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required autofocus /></label>
+                    <button class="btn primary">Switch to the new authenticator</button>
+                    <a class="btn subtle" href="/Account/Profile">Cancel</a>
+                    <p class="small muted">Until you finish, your current authenticator keeps working.</p>
+                </form>
+            }
+            else
+            {
+                <form method="post" asp-page-handler="Password" class="card form" id="password">
+                    <h3>Change password</h3>
+                    @if (Err("password") is { } ep) { <div class="flash error">@ep</div> }
+                    <input name="UserName" value="@me.UserName" autocomplete="username" hidden />
+                    <label><span>Current password</span><input name="CurrentPassword" type="password" autocomplete="current-password" required /></label>
+                    <label><span>New password (at least @Model.MinPasswordLength characters)</span>
+                        <input name="NewPassword" type="password" autocomplete="new-password" minlength="@Model.MinPasswordLength" required /></label>
+                    <label><span>Type the new password again</span><input name="ConfirmPassword" type="password" autocomplete="new-password" required /></label>
+                    <label><span>Authenticator code</span><input name="Code" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+                    <button class="btn primary">Change password</button>
+                </form>
+
+                <form method="post" asp-page-handler="StartAuthenticator" class="card form" style="margin-top:16px" id="auth">
+                    <h3>New phone? Move your authenticator</h3>
+                    <p class="small muted">Sets up a new authenticator and stops the old one working. You'll need your current
+                        code, so do this before you wipe the old phone. If you've already lost it, ask an administrator to reset your authenticator.</p>
+                    @if (Err("auth") is { } ea2) { <div class="flash error">@ea2</div> }
+                    <label><span>Current password</span><input name="CurrentPassword" type="password" autocomplete="current-password" required /></label>
+                    <label><span>Current authenticator code</span><input name="Code" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+                    <button class="btn">Continue</button>
+                </form>
+            }
+
+            <div class="card" style="margin-top:16px">
+                <h3>Recent activity on your account</h3>
+                <table class="grid">
+                    <thead><tr><th>When</th><th>What</th><th>From</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in Model.Recent)
+                        {
+                            <tr>
+                                <td class="small nowrap">@Time.Local(e.AtUtc, "M/d h:mm tt")</td>
+                                <td class="small">@WebText.Web.Pages.Admin.UsersModel.EventLabel(e.Event)
+                                    @if (e.By != null && e.By != e.UserName) { <span class="muted">by @e.By</span> }
+                                    @if (!string.IsNullOrEmpty(e.Details)) { <div class="muted" style="white-space:pre-line">@e.Details</div> }</td>
+                                <td class="small nowrap muted">@e.IpAddress</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="small muted">If you see a sign-in you don't recognise, change your password and tell an administrator.</p>
+            </div>
+        </div>
+
+        <aside>
+            <form method="post" asp-page-handler="Details" class="card form" id="details">
+                <h3>Your details</h3>
+                @if (Err("details") is { } ed) { <div class="flash error">@ed</div> }
+                <label><span>Name</span><input name="DisplayName" value="@Model.DisplayName" maxlength="200" /></label>
+                <label><span>Email</span><input name="Email" type="email" value="@Model.Email" maxlength="256" /></label>
+                <label><span>Authenticator code</span><input name="Code" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+                <button class="btn">Save</button>
+                <p class="small muted">Texts you send are recorded under your user name, <b>@me.UserName</b>.</p>
+            </form>
+
+            <form method="post" asp-page-handler="SignOutOthers" class="card form" style="margin-top:16px" id="sessions">
+                <h3>Sign out everywhere else</h3>
+                <p class="small muted">Ends your sessions on every other browser and device.</p>
+                @if (Err("sessions") is { } es) { <div class="flash error">@es</div> }
+                <label><span>Authenticator code</span><input name="Code" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+                <button class="btn">Sign out other sessions</button>
+            </form>
+        </aside>
+    </div>
+}
+
+@section Scripts {
+    @if (Model.NewAuthToken != null)
+    {
+        <script src="~/lib/qrcode-generator/qrcode.js"></script>
+        <script src="~/js/qr.js" asp-append-version="true"></script>
+    }
+}

@@ -1,0 +1,105 @@
+@page
+@model WebText.Web.Pages.Clients.IndexModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Clients";
+    var pages = (int)Math.Ceiling(Model.Total / (double)WebText.Web.Pages.Clients.IndexModel.PageSize);
+}
+
+<div class="page-head">
+    <h1>Clients</h1>
+    <div class="actions">
+        <a class="btn" href="/Clients@(Model.FilterQuery(handler: "Export"))" title="Exports every client matching the current search and filters">Export CSV</a>
+        <a class="btn" href="/Clients/Import">Import CSV</a>
+        <a class="btn" href="/Groups">Recipient lists</a>
+        <a class="btn primary" href="/Clients/Edit">+ Add client</a>
+    </div>
+</div>
+
+<form method="get" class="filters">
+    <input type="search" name="q" value="@Model.Q" placeholder="Search name, phone, email, account #" autofocus />
+    <select name="list">
+        <option value="">Any list</option>
+        @foreach (var g in Model.Groups)
+        {
+            <option value="@g.Id" selected="@(Model.List == g.Id.ToString())">On: @g.Name</option>
+        }
+        <option value="none" selected="@(Model.List == "none")">On no list</option>
+    </select>
+    <select name="show">
+        <option value="">All clients</option>
+        <option value="optedout" selected="@(Model.Show == "optedout")">Opted out</option>
+        <option value="needsname" selected="@(Model.Show == "needsname")">Unknown numbers (need a name)</option>
+        <option value="nevertexted" selected="@(Model.Show == "nevertexted")">Never texted</option>
+    </select>
+    <button class="btn">Search</button>
+    @if (!string.IsNullOrEmpty(Model.Q + Model.List + Model.Show)) { <a href="/Clients" class="btn subtle">Clear</a> }
+</form>
+
+<form method="post" asp-page-handler="AddToList" id="bulk-form">
+    <input type="hidden" name="q" value="@Model.Q" />
+    <input type="hidden" name="list" value="@Model.List" />
+    <input type="hidden" name="show" value="@Model.Show" />
+    <input type="hidden" name="p" value="@Model.P" />
+
+    <div class="toolbar">
+        <span class="muted small">@Model.Total.ToString("N0") client@(Model.Total == 1 ? "" : "s")</span>
+        @if (Model.Groups.Any())
+        {
+            <span class="spacer"></span>
+            <span class="small">Add ticked clients to</span>
+            <select name="TargetGroupId" class="inline-select">
+                <option value="">choose a list…</option>
+                @foreach (var g in Model.Groups) { <option value="@g.Id">@g.Name</option> }
+            </select>
+            <button class="btn small">Add</button>
+        }
+    </div>
+
+    <table class="grid">
+        <thead>
+            <tr><th style="width:28px"><input type="checkbox" id="check-all" title="Select all on this page" /></th>
+                <th>Name</th><th>Mobile</th><th>Account #</th><th>Email</th><th>Lists</th><th>Texts</th><th>Last text</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Model.Rows)
+            {
+                <tr>
+                    <td><input type="checkbox" name="Selected" value="@r.Id" /></td>
+                    <td>
+                        <a href="/Clients/Edit?id=@r.Id">@r.Name</a>
+                        @if (r.AutoCreated) { <span class="tag warn">needs name</span> }
+                        @if (r.OptedOut) { <span class="tag bad">opted out</span> }
+                    </td>
+                    <td class="nowrap">@r.Phone</td>
+                    <td>@r.Account</td>
+                    <td>@r.Email</td>
+                    <td class="small">@string.Join(", ", r.Lists)</td>
+                    <td>@r.MessageCount</td>
+                    <td class="nowrap">@Time.Local(r.LastMessageAtUtc)</td>
+                    <td class="nowrap right"><a class="btn small" href="/?client=@r.Id">Thread</a></td>
+                </tr>
+            }
+            @if (!Model.Rows.Any())
+            {
+                <tr><td colspan="9" class="muted center">No clients found.</td></tr>
+            }
+        </tbody>
+    </table>
+</form>
+
+@if (pages > 1)
+{
+    <nav class="pager">
+        @if (Model.P > 1) { <a class="btn small" href="@Model.FilterQuery(Model.P - 1)">← Prev</a> }
+        <span class="muted small">Page @Model.P of @pages</span>
+        @if (Model.P < pages) { <a class="btn small" href="@Model.FilterQuery(Model.P + 1)">Next →</a> }
+    </nav>
+}
+
+@section Scripts {
+<script>
+    document.getElementById("check-all").addEventListener("change", e =>
+        document.querySelectorAll("#bulk-form input[name=Selected]").forEach(c => c.checked = e.target.checked));
+</script>
+}

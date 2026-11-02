@@ -1,0 +1,127 @@
+@page
+@model WebText.Web.Pages.BulkModel
+@{
+    ViewData["Title"] = "Bulk send";
+}
+
+<div class="page-head">
+    <h1>Bulk send</h1>
+</div>
+<p class="muted">Send the same update to many clients. Each text is filed in that client's thread under your name,
+    and replies come back into the inbox like any other message.</p>
+
+@if (Model.Error != null)
+{
+    <div class="banner bad">@Model.Error</div>
+}
+
+<form method="post" class="two-col">
+    <div class="card form">
+        <fieldset class="radios">
+            <legend>Recipients</legend>
+            <label class="check"><input type="radio" name="Mode" value="group" checked="@(Model.Mode == "group")" /> <span>A saved recipient list</span></label>
+            <label class="check"><input type="radio" name="Mode" value="list" checked="@(Model.Mode == "list")" /> <span>Paste a list of account numbers or mobile numbers</span></label>
+            <label class="check"><input type="radio" name="Mode" value="all" checked="@(Model.Mode == "all")" /> <span>Every client who hasn't opted out</span></label>
+        </fieldset>
+        <label id="group-wrap">
+            <span>Recipient list · <a href="/Groups">manage lists</a></span>
+            <select name="GroupId">
+                <option value="">Choose a list…</option>
+                @foreach (var g in Model.Groups)
+                {
+                    <option value="@g.Id" selected="@(g.Id == Model.GroupId)">@g.Name</option>
+                }
+            </select>
+        </label>
+        <label id="ids-wrap">
+            <span>Account numbers / phone numbers (one per line, or comma separated)</span>
+            <textarea name="Identifiers" rows="6" placeholder="10045&#10;10046&#10;(312) 555-0100">@Model.Identifiers</textarea>
+        </label>
+
+        <label>
+            <span>Message
+                <select id="bulk-template" class="inline">
+                    <option value="">Insert template…</option>
+                    @foreach (var t in Model.Templates)
+                    {
+                        <option value="@t.Body">@t.Name</option>
+                    }
+                </select>
+            </span>
+            <textarea name="Body" id="bulk-body" rows="5" maxlength="1600">@Model.Body</textarea>
+        </label>
+        <p class="muted small">Merge fields: <code>{FirstName}</code> <code>{LastName}</code> <code>{FullName}</code>
+            · <span id="bulk-count"></span></p>
+
+        <div class="form-foot">
+            <button class="btn" asp-page-handler="Preview">Preview recipients</button>
+            @if (Model.Previewed && Model.Recipients.Any())
+            {
+                <button class="btn primary" asp-page-handler="Send"
+                        onclick="return confirm('Send this text to @Model.Recipients.Count client(s)?')">
+                    Send to @Model.Recipients.Count client@(Model.Recipients.Count == 1 ? "" : "s")
+                </button>
+            }
+        </div>
+    </div>
+
+    <aside class="card">
+        @if (!Model.Previewed)
+        {
+            <h3>Preview</h3>
+            <p class="muted small">Click <b>Preview recipients</b> to check who will get the text before sending.</p>
+        }
+        else
+        {
+            <h3>@Model.Recipients.Count recipient@(Model.Recipients.Count == 1 ? "" : "s")</h3>
+            <p class="muted small">
+                Sends at the configured rate, about @WebText.Web.Pages.BulkModel.Humanize(Model.EstimatedDuration) in total.
+                @if (Model.DailyLimit is { } dl && Model.Recipients.Count > dl.Remaining)
+                {
+                    <div class="banner warn small" style="margin-top:8px">VoIP.ms daily limit: @dl.Remaining of @dl.Limit texts left today.
+                        The first @dl.Remaining go out today and the rest wait in the queue until tomorrow (more days if needed).
+                        VoIP.ms support can raise the limit. Note that VoIP.ms may restrict accounts that send in bulk.</div>
+                }
+                @if (Model.OptedOutSkipped > 0) { <span>@Model.OptedOutSkipped opted-out client(s) will be skipped.</span> }
+            </p>
+            @if (Model.Unmatched.Any())
+            {
+                <div class="banner warn small">Not found (@Model.Unmatched.Count): @string.Join(", ", Model.Unmatched.Take(50))@(Model.Unmatched.Count > 50 ? "…" : "")</div>
+            }
+            @if (Model.Recipients.Any())
+            {
+                var first = Model.Recipients.First();
+                <p class="small"><b>Example for @first.DisplayName:</b></p>
+                <div class="bubble outbound-preview">@Model.Merge(Model.Body ?? "", first)</div>
+                <table class="grid compact">
+                    <thead><tr><th>Name</th><th>Mobile</th><th>Account #</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in Model.Recipients.Take(200))
+                        {
+                            <tr><td>@c.DisplayName</td><td class="nowrap">@PhoneNumber.Format(c.PhoneE164)</td><td>@c.AccountNumber</td></tr>
+                        }
+                    </tbody>
+                </table>
+                @if (Model.Recipients.Count > 200) { <p class="muted small">…and @(Model.Recipients.Count - 200) more.</p> }
+            }
+        }
+    </aside>
+</form>
+
+@section Scripts {
+<script>
+(function () {
+    const body = document.getElementById("bulk-body"), count = document.getElementById("bulk-count");
+    const upd = () => { const s = TT.segments(body.value.replace(/\{(FirstName|LastName|FullName)\}/gi, "Xxxxxxxx"));
+        count.textContent = body.value ? `~${s.chars} chars · ${s.segments} segment${s.segments === 1 ? "" : "s"} per client` : ""; };
+    body.addEventListener("input", upd); upd();
+    document.getElementById("bulk-template").addEventListener("change", e => {
+        if (e.target.value) { body.value = e.target.value; upd(); } e.target.value = "";
+    });
+    const wrap = document.getElementById("ids-wrap"), gwrap = document.getElementById("group-wrap");
+    const sync = () => { const m = (document.querySelector("input[name=Mode]:checked") || {}).value;
+        wrap.hidden = m !== "list"; gwrap.hidden = m !== "group"; };
+    document.querySelectorAll("input[name=Mode]").forEach(r => r.addEventListener("change", sync)); sync();
+})();
+</script>
+}

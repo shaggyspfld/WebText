@@ -1,0 +1,89 @@
+@using WebText.Web.Auth
+@inject WebText.Web.Auth.GroupMembership Groups
+@inject WebText.Web.Services.SettingsService SettingsSvc
+@inject WebText.Web.Services.BackupHealth BackupHealthSvc
+@{
+    var currentPage = ViewContext.RouteData.Values["page"] as string ?? "";
+    var isAdmin = Groups.IsAdmin(User);
+    var appSettings = SettingsSvc.Current;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(ViewData["Title"] is string t ? t + " · " : "")@appSettings.OfficeName</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="@(ViewData["BodyClass"] ?? "")">
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-mark" aria-hidden="true">✉</span>
+            @appSettings.OfficeName
+        </a>
+        <nav>
+            <a href="/" class="@(ViewContext.RouteData.Values["page"] as string == "/Index" ? "active" : "")">
+                Inbox <span id="nav-unread" class="pill" hidden></span>
+            </a>
+            <a href="/Clients" class="@((ViewContext.RouteData.Values["page"] as string ?? "").StartsWith("/Clients") ? "active" : "")">Clients</a>
+            <a href="/Groups" class="@(currentPage.StartsWith("/Groups") ? "active" : "")">Lists</a>
+            <a href="/Bulk" class="@(ViewContext.RouteData.Values["page"] as string == "/Bulk" ? "active" : "")">Bulk send</a>
+            <a href="/Templates" class="@(ViewContext.RouteData.Values["page"] as string == "/Templates" ? "active" : "")">Templates</a>
+            <a href="/AutoReplies" class="@(currentPage == "/AutoReplies" ? "active" : "")">Auto-replies</a>
+            <a href="/Log"class="@(currentPage == "/Log" ? "active" : "")">Message log</a>
+            @if (isAdmin)
+            {
+                <a href="/Reports" class="@(currentPage == "/Reports" ? "active" : "")">Reports</a>
+                <a href="/Admin/Users" class="@(currentPage == "/Admin/Users" ? "active" : "")">Users</a>
+                <a href="/Admin/Settings" class="@(currentPage is "/Admin/Settings" or "/Admin/Backup" ? "active" : "")">Settings</a>
+            }
+        </nav>
+        @if (User.IsLocalUser())
+        {
+            <div class="who" title="Messages you send are recorded under this user name">
+                <span class="dot" id="conn-dot" title="Live updates"></span>
+                <a href="/Account/Profile">@User.Identity?.Name</a>
+                <form method="post" action="/Account/Logout" class="inline"><button>Sign out</button></form>
+            </div>
+        }
+        else
+        {
+            <div class="who" title="Messages you send are recorded under this Windows account">
+                <span class="dot" id="conn-dot" title="Live updates"></span>
+                @User.Identity?.Name
+            </div>
+        }
+    </header>
+
+    <main class="@(ViewData["MainClass"] ?? "page")">
+        @if (!appSettings.TextingReady && !currentPage.StartsWith("/Admin"))
+        {
+            <div class="flash error">
+                Texting isn't set up yet: the @appSettings.ProviderName account details and sending number haven't been entered.
+                @if (isAdmin) { <a href="/Admin/Settings">Open Settings</a> } else { <span>Ask an administrator to finish setup.</span> }
+            </div>
+        }
+        else if (appSettings.UnreadableSecrets.Any() && isAdmin && !currentPage.StartsWith("/Admin"))
+        {
+            <div class="flash error">A saved password or API key can't be decrypted on this server. <a href="/Admin/Settings">Re-enter it on the Settings page.</a></div>
+        }
+        @if (isAdmin && !currentPage.StartsWith("/Admin/Backup") && BackupHealthSvc.Problem() is { } backupProblem)
+        {
+            <div class="flash error">Backups: @backupProblem <a href="/Admin/Backup">Backup &amp; restore</a></div>
+        }
+        @if (TempData["Flash"] is string flash)
+        {
+            <div class="flash">@flash</div>
+        }
+        @if (TempData["FlashError"] is string flashErr)
+        {
+            <div class="flash error">@flashErr</div>
+        }
+        @RenderBody()
+    </main>
+
+    <script src="~/lib/signalr/signalr.min.js"></script>
+    <script src="~/js/common.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

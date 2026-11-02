@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- .NET 10 is the current LTS release (supported until November 2028). -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>WebText.Web</RootNamespace>
+    <UserSecretsId>webtext-web-7f3c2a9e</UserSecretsId>
+    <!-- English only: don't publish the cs/de/es/fr/... folders of translated library messages. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Fail the build if any package has a known high/critical vulnerability. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditLevel>high</NuGetAuditLevel>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1903;NU1904</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows (Kerberos/NTLM) authentication. 10.0.13+ includes the fixes for CVE-2026-47300/47303 and later advisories. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.0.13" />
+
+    <!-- Data store -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
+    <!-- Ed25519 verification of Telnyx webhook signatures (still not built into .NET 10). -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+  </ItemGroup>
+
+  <ItemGroup Label="Database upgrade scripts (run by 'dotnet WebText.Web.dll --setup-database')">
+    <Content Include="..\..\sql\upgrade-*.sql" Link="sql\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Label="Security pins for indirect dependencies">
+    <!-- Pulled in by Microsoft.Data.SqlClient (via EF Core SqlServer) at 9.0.11, which is affected by
+         CVE-2026-84008 / GHSA-846f-f764-76mx. Pinning a patched version here overrides it.
+         Remove once EF Core/SqlClient depend on a patched version themselves. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,70 @@
+@page
+@{
+    ViewData["Title"] = "Inbox";
+    ViewData["MainClass"] = "inbox";
+}
+
+<section class="convo-pane" aria-label="Conversations">
+    <div class="convo-tools">
+        <input id="convo-search" type="search" placeholder="Search name, phone, account #, text…" autocomplete="off" />
+        <div class="convo-filters">
+            <label><input type="checkbox" id="convo-unread" /> Unread only</label>
+            <button type="button" class="btn small" id="new-convo-btn">+ New text</button>
+        </div>
+    </div>
+    <ul id="convo-list" class="convo-list"></ul>
+</section>
+
+<section class="thread-pane" aria-label="Message thread">
+    <div id="thread-empty" class="thread-empty">
+        <p>Select a conversation, or start a new text.</p>
+    </div>
+
+    <div id="thread" class="thread" hidden>
+        <div class="thread-head">
+            <div>
+                <h2 id="t-name"></h2>
+                <div class="muted small">
+                    <span id="t-phone"></span>
+                    <span id="t-account"></span>
+                    <a id="t-edit" href="#">Edit client</a>
+                </div>
+                <div id="t-warnings"></div>
+            </div>
+            <div id="t-viewers" class="viewers"></div>
+        </div>
+
+        <div id="t-messages" class="messages" aria-live="polite"></div>
+
+        <div class="composer">
+            <div class="composer-tabs" role="tablist">
+                <button type="button" class="tab active" data-mode="sms" role="tab">Text client</button>
+                <button type="button" class="tab" data-mode="note" role="tab">Internal note / call log</button>
+                <select id="t-template" aria-label="Insert template">
+                    <option value="">Insert template…</option>
+                </select>
+            </div>
+            <div id="t-composing" class="composing" hidden></div>
+            <textarea id="t-body" rows="3" maxlength="1600" placeholder="Type a text message…"></textarea>
+            <div class="composer-foot">
+                <span id="t-count" class="muted small"></span>
+                <span id="t-error" class="error-text"></span>
+                <button type="button" id="t-send" class="btn primary">Send text</button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<dialog id="new-convo">
+    <form method="dialog" class="dialog-body">
+        <h3>New text</h3>
+        <input id="nc-search" type="search" placeholder="Search clients by name, phone or account #" autocomplete="off" />
+        <ul id="nc-results" class="pick-list"></ul>
+        <p class="muted small">Not listed? <a href="/Clients/Edit">Add a new client</a> first.</p>
+        <div class="right"><button class="btn">Close</button></div>
+    </form>
+</dialog>
+
+@section Scripts {
+    <script src="~/js/inbox.js" asp-append-version="true"></script>
+}

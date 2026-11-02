@@ -1,0 +1,127 @@
+@page
+@model WebText.Web.Pages.Groups.EditModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = Model.Group.Name;
+}
+
+<div class="page-head">
+    <h1>@Model.Group.Name <span class="muted small">· @Model.TotalMembers client@(Model.TotalMembers == 1 ? "" : "s")</span></h1>
+    <div class="actions">
+        <a class="btn subtle" href="/Groups">All lists</a>
+        <a class="btn" href="/Groups/Edit?id=@Model.Id&handler=Export">Export CSV</a>
+        <a class="btn primary" href="/Bulk?group=@Model.Id">Text this list</a>
+    </div>
+</div>
+
+<div class="two-col">
+    <div>
+        <form method="get" class="searchbar">
+            <input type="hidden" name="id" value="@Model.Id" />
+            <input type="search" name="q" value="@Model.Q" placeholder="Filter this list" />
+            <button class="btn">Filter</button>
+            @if (!string.IsNullOrEmpty(Model.Q)) { <a class="btn subtle" href="/Groups/Edit?id=@Model.Id">Clear</a> }
+        </form>
+
+        <form method="post" asp-page-handler="Remove" asp-route-id="@Model.Id" id="remove-form">
+            <table class="grid">
+                <thead>
+                    <tr>
+                        <th style="width:28px"><input type="checkbox" id="check-all" title="Select all" /></th>
+                        <th>Name</th><th>Mobile</th><th>Account #</th><th>Added</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in Model.Members)
+                    {
+                        <tr>
+                            <td><input type="checkbox" name="Selected" value="@m.ClientId" /></td>
+                            <td><a href="/Clients/Edit?id=@m.ClientId">@m.Name</a>
+                                @if (m.OptedOut) { <span class="tag bad">opted out</span> }</td>
+                            <td class="nowrap">@m.Phone</td>
+                            <td>@m.Account</td>
+                            <td class="nowrap small">@Time.Local(m.AddedAtUtc, "M/d/yyyy") <span class="muted">@m.AddedBy</span></td>
+                            <td class="nowrap right"><a class="btn small subtle" href="/?client=@m.ClientId">Thread</a></td>
+                        </tr>
+                    }
+                    @if (!Model.Members.Any())
+                    {
+                        <tr><td colspan="6" class="muted center">@(string.IsNullOrEmpty(Model.Q) ? "No clients on this list yet. Add some on the right." : "No matches.")</td></tr>
+                    }
+                </tbody>
+            </table>
+            @if (Model.Members.Any())
+            {
+                <div class="form-foot">
+                    <button class="btn" onclick="return confirm('Remove the ticked clients from this list?')">Remove selected from list</button>
+                </div>
+            }
+        </form>
+    </div>
+
+    <aside>
+        <div class="card form">
+            <h3>Add one client</h3>
+            <form method="post" asp-page-handler="AddOne" asp-route-id="@Model.Id" id="addone-form">
+                <input type="search" id="add-search" placeholder="Search name, phone, account #" autocomplete="off" />
+                <ul id="add-results" class="pick-list"></ul>
+                <input type="hidden" name="ClientId" id="add-id" />
+            </form>
+
+            <h3>Add many</h3>
+            <form method="post" asp-page-handler="AddList" asp-route-id="@Model.Id">
+                <label>
+                    <span>Account numbers or mobile numbers, one per line (paste a column from Excel)</span>
+                    <textarea name="Identifiers" rows="6" placeholder="10045&#10;10046&#10;(312) 555-0100"></textarea>
+                </label>
+                <button class="btn primary">Add to list</button>
+            </form>
+        </div>
+
+        <form method="post" asp-page-handler="Save" asp-route-id="@Model.Id" class="card form" style="margin-top:16px">
+            <h3>List details</h3>
+            <label><span>Name</span><input name="Name" value="@Model.Name" maxlength="100" required /></label>
+            <label><span>Description</span><input name="Description" value="@Model.Description" maxlength="500" /></label>
+            <div class="form-foot"><button class="btn">Save</button></div>
+        </form>
+
+        <div class="card" style="margin-top:16px">
+            <h3>Clean up</h3>
+            <p class="muted small">Deleting a list or emptying it never deletes clients or their texts.</p>
+            <div class="form-foot">
+                <form method="post" asp-page-handler="Clear" asp-route-id="@Model.Id" class="inline"
+                      onsubmit="return confirm('Remove every client from this list?')"><button class="btn">Empty list</button></form>
+                <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Id" class="inline"
+                      onsubmit="return confirm('Delete this list?')"><button class="btn danger">Delete list</button></form>
+            </div>
+        </div>
+    </aside>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const all = document.getElementById("check-all");
+    if (all) all.addEventListener("change", () =>
+        document.querySelectorAll("#remove-form input[name=Selected]").forEach(c => c.checked = all.checked));
+
+    const s = document.getElementById("add-search"), list = document.getElementById("add-results"),
+          hid = document.getElementById("add-id"), form = document.getElementById("addone-form");
+    let t;
+    s.addEventListener("input", () => {
+        clearTimeout(t);
+        t = setTimeout(async () => {
+            const q = s.value.trim();
+            if (q.length < 2) { list.innerHTML = ""; return; }
+            const rows = await TT.api("/api/clients/search?q=" + encodeURIComponent(q));
+            list.innerHTML = rows.map(r => `<li data-id="${r.id}"><b>${TT.esc(r.name)}</b> <span class="muted">${TT.esc(r.phone)}${r.account ? " · " + TT.esc(r.account) : ""}</span></li>`).join("")
+                || `<li class="muted">No matches.</li>`;
+        }, 200);
+    });
+    list.addEventListener("click", e => {
+        const li = e.target.closest("li[data-id]"); if (!li) return;
+        hid.value = li.dataset.id; form.submit();
+    });
+})();
+</script>
+}

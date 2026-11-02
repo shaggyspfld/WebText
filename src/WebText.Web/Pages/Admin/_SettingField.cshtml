@@ -1,0 +1,105 @@
+@model WebText.Web.Pages.Admin.SettingFieldModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    var def = Model.Def;
+    var page = Model.Page;
+    var field = "v:" + def.Name;
+    var id = "f_" + def.Name.Replace('.', '_');
+    page.Meta.TryGetValue(def.Name, out var meta);
+    page.Errors.TryGetValue(def.Name, out var error);
+    var value = page.Display(def);
+}
+<div class="setting @(error != null ? "has-error" : "")" data-provider="@def.Provider">
+    <label for="@id"><span>@def.Label</span></label>
+    @switch (def.Type)
+    {
+        case SettingType.Secret:
+            var isSet = meta?.HasValue == true && !page.Current.UnreadableSecrets.Contains(def.Name);
+            <input id="@id" name="@field" type="password" autocomplete="new-password"
+                   placeholder="@(isSet ? "•••••••• saved — type a new value to replace it" : "Not set")" />
+            @if (meta?.HasValue == true)
+            {
+                <label class="check small"><input type="checkbox" name="clear:@def.Name" value="1" /> <span>Remove the saved value</span></label>
+            }
+            break;
+        case SettingType.Bool:
+            <select id="@id" name="@field">
+                <option value="true" selected="@(value == "true")">Yes</option>
+                <option value="false" selected="@(value == "false")">No</option>
+            </select>
+            break;
+        case SettingType.Provider:
+            <select id="@id" name="@field" data-provider-select>
+                <option value="Telnyx" selected="@(!string.Equals(value, "VoipMs", StringComparison.OrdinalIgnoreCase))">Telnyx</option>
+                <option value="VoipMs" selected="@(string.Equals(value, "VoipMs", StringComparison.OrdinalIgnoreCase))">VoIP.ms</option>
+            </select>
+            break;
+        case SettingType.Token:
+            var hasToken = meta?.HasValue == true && !page.Current.UnreadableSecrets.Contains(def.Name);
+            <div class="small">@(hasToken ? "Set. It's part of the callback URL shown on the right." : "Not created yet. It's created when you save with VoIP.ms selected.")</div>
+            @if (hasToken)
+            {
+                <label class="check small"><input type="checkbox" name="regen:@def.Name" value="1" />
+                    <span>Make a new key (the old callback URL stops working; update it in the VoIP.ms portal)</span></label>
+            }
+            break;
+        case SettingType.Weekdays:
+            var days = BackupSchedule.ParseDays(value);
+            <input type="hidden" name="@field" value="" />
+            <div class="weekdays">
+                @for (var i = 1; i <= 7; i++)
+                {
+                    var d = (DayOfWeek)(i % 7);
+                    var code = BackupSchedule.DayCodes[(int)d];
+                    <label class="check inline"><input type="checkbox" name="@field" value="@code" checked="@days.Contains(d)" /> <span>@code</span></label>
+                }
+            </div>
+            break;
+        case SettingType.TimeOfDay:
+            <input id="@id" name="@field" type="time" value="@value" style="max-width:160px" />
+            break;
+        case SettingType.Folder:
+            <input id="@id" name="@field" value="@value" placeholder="@def.Default" spellcheck="false" class="mono" />
+            break;
+        case SettingType.AuthMode:
+            <select id="@id" name="@field">
+                <option value="Windows" selected="@(!string.Equals(value, "Local", StringComparison.OrdinalIgnoreCase))">Windows (Active Directory)</option>
+                <option value="Local" selected="@(string.Equals(value, "Local", StringComparison.OrdinalIgnoreCase))">Local accounts with authenticator app</option>
+            </select>
+            <div class="help"><a href="/Admin/Users">Manage local users and groups</a> (@(page.LocalUserSummary))</div>
+            break;
+        case SettingType.TimeZone:
+            <select id="@id" name="@field">
+                @foreach (var tz in page.TimeZones)
+                {
+                    <option value="@tz.Id" selected="@(tz.Id == value)">@tz.DisplayName</option>
+                }
+            </select>
+            break;
+        case SettingType.Phone:
+            <input id="@id" name="@field" type="tel" value="@(PhoneNumber.ToE164(value) is { } e ? PhoneNumber.Format(e) : value)" />
+            break;
+        case SettingType.IpList:
+            <textarea id="@id" name="@field" rows="8" spellcheck="false" class="mono">@value</textarea>
+            <div class="help">Clear the box and save to go back to the default.</div>
+            break;
+        case SettingType.Number:
+            <input id="@id" name="@field" inputmode="decimal" value="@value" placeholder="@def.Default" />
+            break;
+        default:
+            <input id="@id" name="@field" value="@value" placeholder="@def.Default" spellcheck="false" />
+            break;
+    }
+    @if (error != null)
+    {
+        <div class="error-text">@error</div>
+    }
+    @if (!string.IsNullOrEmpty(def.Help))
+    {
+        <div class="help">@def.Help</div>
+    }
+    @if (meta?.UpdatedAtUtc is { } when)
+    {
+        <div class="help muted">Last changed @Time.Local(when) by @meta.UpdatedBy</div>
+    }
+</div>

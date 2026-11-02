@@ -1,0 +1,214 @@
+@page
+@model WebText.Web.Pages.ReportsModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Usage reports";
+    var r = Model.Report;
+    string Pct(double? v) => v is { } x ? (x * 100).ToString("0") + "%" : "–";
+    string Dur(TimeSpan? t) => ReportService.FormatDuration(t);
+    var maxPeriod = Math.Max(1, r.Periods.Select(p => Math.Max(p.Sent, p.Received)).DefaultIfEmpty(0).Max());
+    var labelEvery = Math.Max(1, (int)Math.Ceiling(r.Periods.Count / 14.0));
+    string SortLink(string key, string label) =>
+        $"<a href=\"{Model.Link(sort: key)}#clients\" class=\"{((Model.Sort ?? "total") == key ? "sorted" : "")}\">{label}</a>";
+}
+
+<div class="page-head">
+    <h1>Usage reports</h1>
+    <div class="actions">
+        <a class="btn" href="@Model.Link(handler: "Export", what: "summary")">Export summary</a>
+    </div>
+</div>
+
+<form method="get" class="filters">
+    <select name="range" id="range">
+        @foreach (var (key, label) in WebText.Web.Pages.ReportsModel.Ranges)
+        {
+            <option value="@key" selected="@(Model.Range == key)">@label</option>
+        }
+    </select>
+    <span id="custom-dates" class="filters" style="margin:0">
+        <label class="inline">From <input type="date" name="from" value="@(Model.From?.ToString("yyyy-MM-dd"))" /></label>
+        <label class="inline">To <input type="date" name="to" value="@(Model.To?.ToString("yyyy-MM-dd"))" /></label>
+    </span>
+    <button class="btn">Update</button>
+    <span class="muted small">@r.FromLocal.ToString("MMM d, yyyy") – @r.ToLocal.ToString("MMM d, yyyy")</span>
+</form>
+
+@* ---------- headline tiles ---------- *@
+<div class="tiles">
+    <div class="tile">
+        <div class="tile-label">Texts sent</div>
+        <div class="tile-value">@r.Sent.ToString("N0")</div>
+        <div class="tile-sub">@r.OneToOneTexts.ToString("N0") one-to-one · @r.BulkTexts.ToString("N0") in @r.BulkSends bulk send@(r.BulkSends == 1 ? "" : "s")@(r.AutoReplies > 0 ? $" · {r.AutoReplies:N0} auto-replies" : "")</div>
+    </div>
+    <div class="tile">
+        <div class="tile-label">Texts received</div>
+        <div class="tile-value">@r.Received.ToString("N0")</div>
+        <div class="tile-sub">from @r.ClientsReplied.ToString("N0") client@(r.ClientsReplied == 1 ? "" : "s")</div>
+    </div>
+    <div class="tile">
+        <div class="tile-label">Delivery rate</div>
+        <div class="tile-value">@Pct(r.DeliveryRate)</div>
+        <div class="tile-sub">@r.Delivered.ToString("N0") delivered · <span class="@(r.Failed > 0 ? "bad-text" : "")">@r.Failed.ToString("N0") failed</span>@(r.InFlight > 0 ? $" · {r.InFlight:N0} in progress" : "")</div>
+    </div>
+    <div class="tile">
+        <div class="tile-label">Client reply rate</div>
+        <div class="tile-value">@Pct(r.ReplyRate)</div>
+        <div class="tile-sub">@r.ClientsTextedWhoReplied.ToString("N0") of @r.ClientsTexted.ToString("N0") clients texted wrote back</div>
+    </div>
+    <div class="tile">
+        <div class="tile-label">Median response to clients</div>
+        <div class="tile-value">@Dur(r.MedianResponse)</div>
+        <div class="tile-sub">@r.AnsweredWithinHour.ToString("N0") of @r.InboundAnswered.ToString("N0") answered within an hour</div>
+    </div>
+    <div class="tile @(r.InboundUnanswered > 0 ? "attention" : "")">
+        <div class="tile-label">Awaiting a reply</div>
+        <div class="tile-value">@r.InboundUnanswered.ToString("N0")</div>
+        <div class="tile-sub">client texts with no staff text or note after them</div>
+    </div>
+    <div class="tile">
+        <div class="tile-label">Staff using it</div>
+        <div class="tile-value">@r.ActiveStaff</div>
+        <div class="tile-sub">@r.Notes.ToString("N0") call notes logged</div>
+    </div>
+    <div class="tile">
+        <div class="tile-label">SMS segments</div>
+        <div class="tile-value">@((r.SegmentsSent + r.SegmentsReceived).ToString("N0"))</div>
+        <div class="tile-sub">@r.SegmentsSent.ToString("N0") out · @r.SegmentsReceived.ToString("N0") in@(r.EstimatedCost is { } cost ? $" · ≈ {cost:C}" : "")</div>
+    </div>
+</div>
+<p class="muted small">
+    @r.OptOuts opt-out@(r.OptOuts == 1 ? "" : "s") and @r.UnknownNumbers text@(r.UnknownNumbers == 1 ? "" : "s") from unknown numbers in this period.
+    Long texts are billed as several SMS segments.
+</p>
+
+@* ---------- activity over time ---------- *@
+<section class="card report-section">
+    <div class="section-head">
+        <h3>Activity by @r.PeriodUnit</h3>
+        <div class="legend"><span class="key sent"></span>Sent <span class="key recv"></span>Received
+            <a class="btn small" href="@Model.Link(handler: "Export", what: "periods")">CSV</a></div>
+    </div>
+    @if (r.Sent + r.Received == 0)
+    {
+        <p class="muted center">No texts in this period.</p>
+    }
+    else
+    {
+        <div class="chart" role="img" aria-label="Texts sent and received per @r.PeriodUnit">
+            <div class="chart-axis"><span>@maxPeriod</span><span>@(maxPeriod / 2)</span><span>0</span></div>
+            <div class="chart-cols">
+                @for (var i = 0; i < r.Periods.Count; i++)
+                {
+                    var p = r.Periods[i];
+                    <div class="chart-col" title="@p.Label: @p.Sent sent, @p.Received received@(p.Failed > 0 ? $", {p.Failed} failed" : "")">
+                        <div class="bars">
+                            <div class="bar sent" style="height:@((p.Sent * 100.0 / maxPeriod).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                            <div class="bar recv" style="height:@((p.Received * 100.0 / maxPeriod).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></div>
+                        </div>
+                        <div class="chart-label">@(i % labelEvery == 0 ? p.Label : "")</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@* ---------- by staff ---------- *@
+<section class="card report-section">
+    <div class="section-head">
+        <h3>By staff member (Windows user)</h3>
+        <a class="btn small" href="@Model.Link(handler: "Export", what: "staff")">CSV</a>
+    </div>
+    <table class="grid compact">
+        <thead>
+            <tr><th>User</th><th class="num">Sent</th><th class="num">1-to-1</th><th class="num">Bulk</th><th class="num">Delivered</th>
+                <th class="num">Failed</th><th class="num">Clients</th><th class="num">Notes</th><th class="num">Replies handled</th>
+                <th class="num">Median response</th><th>Last active</th><th></th></tr>
+        </thead>
+        <tbody>
+            @{ var maxStaff = Math.Max(1, r.Staff.Select(s => s.Sent).DefaultIfEmpty(0).Max()); }
+            @foreach (var s in r.Staff)
+            {
+                <tr>
+                    <td class="nowrap"><b>@s.User</b>
+                        <div class="minibar"><span style="width:@((s.Sent * 100.0 / maxStaff).ToString("0", System.Globalization.CultureInfo.InvariantCulture))%"></span></div></td>
+                    <td class="num">@s.Sent.ToString("N0")</td>
+                    <td class="num">@s.OneToOne.ToString("N0")</td>
+                    <td class="num">@s.Bulk.ToString("N0")</td>
+                    <td class="num">@s.Delivered.ToString("N0")</td>
+                    <td class="num @(s.Failed > 0 ? "bad-text" : "")">@s.Failed.ToString("N0")</td>
+                    <td class="num">@s.ClientsTexted.ToString("N0")</td>
+                    <td class="num">@s.Notes.ToString("N0")</td>
+                    <td class="num">@s.RepliesHandled.ToString("N0")</td>
+                    <td class="num">@Dur(s.MedianResponse)</td>
+                    <td class="nowrap small">@Time.Local(s.LastActivityUtc)</td>
+                    <td class="nowrap"><a class="small" href="/Log?sentBy=@Uri.EscapeDataString(s.User)&from=@r.FromLocal.ToString("yyyy-MM-dd")&to=@r.ToLocal.ToString("yyyy-MM-dd")">messages</a></td>
+                </tr>
+            }
+            @if (!r.Staff.Any())
+            {
+                <tr><td colspan="12" class="muted center">No staff activity in this period.</td></tr>
+            }
+        </tbody>
+    </table>
+    <p class="muted small">"Replies handled" counts client texts where this person sent the next text or note. Response time is measured from the client's text to that first staff action, around the clock (nights and weekends included).</p>
+</section>
+
+@* ---------- by client ---------- *@
+<section class="card report-section" id="clients">
+    <div class="section-head">
+        <h3>By client / phone number</h3>
+        <a class="btn small" href="@Model.Link(handler: "Export", what: "clients")">CSV (all @r.Clients.Count.ToString("N0"))</a>
+    </div>
+    <table class="grid compact sortable">
+        <thead>
+            <tr>
+                <th>@Html.Raw(SortLink("name", "Client"))</th><th>Mobile</th><th>Account #</th>
+                <th class="num">@Html.Raw(SortLink("sent", "Sent"))</th>
+                <th class="num">@Html.Raw(SortLink("received", "Received"))</th>
+                <th class="num">@Html.Raw(SortLink("total", "Total"))</th>
+                <th class="num">Notes</th>
+                <th class="num">@Html.Raw(SortLink("failed", "Failed"))</th>
+                <th>Staff</th>
+                <th>@Html.Raw(SortLink("recent", "Last activity"))</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in Model.ClientRows)
+            {
+                <tr>
+                    <td><a href="/?client=@c.ClientId">@c.Name</a>@if (c.OptedOut) { <span class="tag bad">opted out</span> }</td>
+                    <td class="nowrap">@c.Phone</td>
+                    <td>@c.Account</td>
+                    <td class="num">@c.Sent</td>
+                    <td class="num">@c.Received</td>
+                    <td class="num"><b>@c.Total</b></td>
+                    <td class="num">@c.Notes</td>
+                    <td class="num @(c.Failed > 0 ? "bad-text" : "")">@c.Failed</td>
+                    <td class="small">@c.Staff</td>
+                    <td class="nowrap small">@Time.Local(c.LastActivityUtc)</td>
+                </tr>
+            }
+            @if (!Model.ClientRows.Any())
+            {
+                <tr><td colspan="10" class="muted center">No client activity in this period.</td></tr>
+            }
+        </tbody>
+    </table>
+    @if (r.Clients.Count > Model.ClientRows.Count)
+    {
+        <p class="muted small">Showing the top @Model.ClientRows.Count of @r.Clients.Count.ToString("N0") clients. Export the CSV for the full list.</p>
+    }
+</section>
+
+@section Scripts {
+<script>
+(function () {
+    const range = document.getElementById("range"), custom = document.getElementById("custom-dates");
+    const sync = () => custom.hidden = range.value !== "custom";
+    range.addEventListener("change", () => { sync(); if (range.value !== "custom") range.form.submit(); });
+    sync();
+})();
+</script>
+}

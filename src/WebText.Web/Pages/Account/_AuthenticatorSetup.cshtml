@@ -1,0 +1,12 @@
+@model (string Uri, string Key)
+<ol class="steps small">
+    <li>Install an authenticator app on your phone if you don't have one: Microsoft Authenticator, Google Authenticator,
+        Authy, or your password manager (1Password, Bitwarden…).</li>
+    <li>In the app, add an account and scan this QR code:</li>
+</ol>
+<div class="qr" data-otpauth="@Model.Uri" role="img" aria-label="QR code for your authenticator app"></div>
+<p class="small muted">Can't scan? Choose "enter a setup key" in the app and type:</p>
+<p class="secret-key">@Model.Key</p>
+<ol class="steps small" start="3">
+    <li>Type the 6-digit code the app now shows for this account.</li>
+</ol>

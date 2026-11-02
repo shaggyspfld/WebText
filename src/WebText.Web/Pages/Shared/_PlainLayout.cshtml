@@ -1,0 +1,21 @@
+@inject WebText.Web.Services.SettingsService SettingsSvc
+@{ var appSettings = SettingsSvc.Current; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>@(ViewData["Title"] is string t ? t + " · " : "")@appSettings.OfficeName</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="plain">
+    <main class="page">
+        <div class="signin-wrap">
+            <div class="brand signin-brand"><span class="brand-mark" aria-hidden="true">✉</span> @appSettings.OfficeName</div>
+            @RenderBody()
+        </div>
+    </main>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

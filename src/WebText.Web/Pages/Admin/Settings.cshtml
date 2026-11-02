@@ -1,0 +1,183 @@
+@page
+@model WebText.Web.Pages.Admin.SettingsModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Settings";
+    var c = Model.Current;
+    var sections = SettingDefs.All.GroupBy(d => d.Section).ToList();
+}
+
+<div class="page-head">
+    <h1>Settings</h1>
+    <a class="btn subtle" href="/Admin/Backup">Backup &amp; restore</a>
+</div>
+<p class="muted">Everything except the database connection is configured here and stored in SQL. Changes apply within
+    a few seconds on every server; no restart or config-file edit is needed. Only members of
+    <b>@c.AdminGroup</b> can see this page.</p>
+
+@if (Model.Errors.Any())
+{
+    <div class="flash error">Nothing was saved. Fix the highlighted field@(Model.Errors.Count == 1 ? "" : "s") below.</div>
+}
+@if (c.UnreadableSecrets.Any())
+{
+    <div class="flash error">A saved API key or password can't be decrypted on this server (it was probably saved on a different
+        server, or the encryption keys were reset). Enter it again below.</div>
+}
+
+<div class="settings-layout">
+    <form method="post" asp-page-handler="Save" class="settings-form" autocomplete="off">
+        @foreach (var grp in sections)
+        {
+            var anchor = grp.Key.StartsWith("Telnyx") ? "telnyx-settings" : grp.Key.StartsWith("VoIP") ? "voipms-settings" : grp.Key.Split(' ')[0].ToLowerInvariant();
+            var sectionProvider = grp.Select(d => d.Provider).Distinct().Count() == 1 ? grp.First().Provider : null;
+            <section class="card form settings-section" id="@anchor" data-provider="@sectionProvider">
+                <h3>@grp.Key</h3>
+                @foreach (var def in grp.Where(d => !d.Advanced))
+                {
+                    @await Html.PartialAsync("_SettingField", new WebText.Web.Pages.Admin.SettingFieldModel(def, Model))
+                }
+                @if (grp.Any(d => d.Advanced))
+                {
+                    <details open="@(grp.Any(d => d.Advanced && Model.Errors.ContainsKey(d.Name)))">
+                        <summary class="small muted">Advanced</summary>
+                        @foreach (var def in grp.Where(d => d.Advanced))
+                        {
+                            @await Html.PartialAsync("_SettingField", new WebText.Web.Pages.Admin.SettingFieldModel(def, Model))
+                        }
+                    </details>
+                }
+            </section>
+        }
+        <div class="save-bar">
+            <button class="btn primary">Save settings</button>
+            <span class="muted small">Secret fields left blank keep their current value.</span>
+        </div>
+    </form>
+
+    <aside class="settings-side">
+        <section class="card" id="telnyx">
+            <h3>Test the @c.ProviderName connection</h3>
+            @if (Model.TestResult != null)
+            {
+                <div class="banner @(Model.TestOk ? "info" : "bad")">@Model.TestResult</div>
+            }
+            <form method="post" asp-page-handler="Test">
+                <button class="btn">Check the connection</button>
+                <span class="muted small">Reads your account balance; sends nothing.</span>
+            </form>
+            <form method="post" asp-page-handler="SendTest" class="inline-form">
+                <input type="tel" name="testPhone" placeholder="Your mobile number" />
+                <button class="btn" disabled="@(!c.TextingReady)">Send test text</button>
+            </form>
+            @if (Model.DailyLimit is { } dl)
+            {
+                <p class="small">VoIP.ms texts sent today: <b>@dl.Used</b> of @dl.Limit@(dl.Remaining == 0 ? " — limit reached; queued texts go out tomorrow" : "").</p>
+            }
+            <p class="muted small">Save settings before testing. The test text isn't filed under a client; a reply to it will
+                appear in the inbox as a new number.</p>
+        </section>
+
+        <section class="card">
+            <h3>Incoming texts</h3>
+            @if (c.Provider == SmsProviderKind.VoipMs)
+            {
+                <p class="small">In the VoIP.ms portal: DID Numbers → Manage DIDs → edit your number → Message Service (SMS/MMS):
+                    tick <b>Enable SMS/MMS URL Callback</b> and <b>URL Callback Retry</b>, and paste this as the URL
+                    (with your <b>public</b> host name in place of <code>@Model.HttpContext.Request.Host</code>):</p>
+                @if (Model.VoipMsCallbackUrl != null)
+                {
+                    <code class="block wrap-any">@Model.VoipMsCallbackUrl</code>
+                    <p class="muted small">Keep it private: the <code>key=</code> value is what proves a callback came from VoIP.ms.</p>
+                }
+                else
+                {
+                    <p class="small"><b>Save settings with VoIP.ms selected to create the URL.</b></p>
+                }
+            }
+            else
+            {
+                <p class="small">In the Telnyx Portal, set the messaging profile's webhook URL (API v2) to the <b>public</b>
+                    address of:</p>
+                <code class="block">@Model.SuggestedWebhookUrl</code>
+                <p class="muted small">Replace the host with your internet-facing name if staff reach the app on an internal name.</p>
+            }
+            <dl class="facts small">
+                <dt>Last webhook</dt><dd>@(Model.LastWebhookUtc is { } lw ? Time.Local(lw) : "none received yet")</dd>
+                <dt>Last 24 hours</dt><dd>@Model.Webhooks24h</dd>
+                <dt>Texts waiting to send</dt><dd>@Model.QueuedTexts</dd>
+                @if (Model.Guard.LastAcceptedUtc is { } la)
+                {
+                    <dt>Last callback from</dt><dd>@Model.Guard.LastAcceptedIp (@Model.Guard.LastAcceptedProvider, @Time.Local(la))</dd>
+                }
+                <dt>Rejected since restart</dt><dd>@Model.Guard.RejectedSinceStart</dd>
+                @if (Model.Guard.LastRejectedUtc is { } lr)
+                {
+                    <dt>Last rejected</dt><dd>@Time.Local(lr) from @Model.Guard.LastRejectedIp: @Model.Guard.LastRejectedReason</dd>
+                }
+            </dl>
+            @if (Model.RecentWebhookErrors.Any())
+            {
+                <p class="small"><b>Recent processing errors</b></p>
+                <ul class="error-list">
+                    @foreach (var e in Model.RecentWebhookErrors)
+                    {
+                        <li>@Time.Local(e.ReceivedAtUtc) · @e.EventType: @e.ProcessingError</li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="card">
+            <h3>Your access</h3>
+            <dl class="facts small">
+                <dt>Signed in as</dt><dd>@User.Identity?.Name</dd>
+                <dt>@c.UserGroup</dt><dd>@(Model.YouAreUser ? "member" : "not a member")</dd>
+                <dt>@c.AdminGroup</dt><dd>@(Model.YouAreAdmin ? "member" : "not a member")</dd>
+            </dl>
+            <p class="muted small">Group membership is read from your Windows sign-in. After IT changes your groups, sign out
+                of Windows and back in; the app re-checks within 5 minutes.</p>
+        </section>
+
+        <section class="card">
+            <h3>Change history</h3>
+            @if (!Model.History.Any())
+            {
+                <p class="muted small">No changes yet.</p>
+            }
+            else
+            {
+                <table class="grid compact">
+                    <thead><tr><th>When</th><th>Setting</th><th>New value</th><th>By</th></tr></thead>
+                    <tbody>
+                        @foreach (var h in Model.History)
+                        {
+                            <tr>
+                                <td class="nowrap">@Time.Local(h.ChangedAtUtc, "M/d/yy h:mm tt")</td>
+                                <td>@(SettingDefs.Find(h.Name)?.Label ?? h.Name)</td>
+                                <td class="wrap-any">@h.NewValueDisplay</td>
+                                <td class="nowrap">@h.ChangedBy.Split('\\').Last()</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </aside>
+</div>
+
+@section Scripts {
+<script>
+// Show only the selected texting provider's settings. Hidden fields are still submitted, unchanged.
+(function () {
+    const sel = document.querySelector("[data-provider-select]");
+    if (!sel) return;
+    const apply = () => document.querySelectorAll("[data-provider]").forEach(el => {
+        const p = el.getAttribute("data-provider");
+        if (p) el.hidden = p !== sel.value;
+    });
+    sel.addEventListener("change", apply);
+    apply();
+})();
+</script>
+}

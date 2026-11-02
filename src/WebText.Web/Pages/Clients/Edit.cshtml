@@ -1,0 +1,156 @@
+@page
+@model WebText.Web.Pages.Clients.EditModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    var isNew = Model.Existing == null;
+    ViewData["Title"] = isNew ? "Add client" : Model.Existing!.DisplayName;
+}
+
+<div class="page-head">
+    <h1>@(isNew ? "Add client" : Model.Existing!.DisplayName)</h1>
+    @if (!isNew)
+    {
+        <div class="actions"><a class="btn" href="/?client=@Model.Existing!.Id">Open text thread</a></div>
+    }
+</div>
+
+@if (!isNew && Model.Existing!.IsAutoCreated)
+{
+    <div class="banner warn">This record was created automatically when an unknown number texted in.
+        Add the client's name below, or merge it into an existing client.</div>
+}
+@if (Model.SharingNumber.Any())
+{
+    <div class="banner info">
+        Shares this mobile number with:
+        @foreach (var s in Model.SharingNumber)
+        {
+            <a href="/Clients/Edit?id=@s.Id">@s.DisplayName</a>
+        }
+        — replies are filed under whichever client was texted most recently.
+    </div>
+}
+
+<div class="two-col">
+    <form method="post" class="card form">
+        <div asp-validation-summary="ModelOnly" class="error-text"></div>
+        <div class="row">
+            <label>
+                <span>First name</span>
+                <input asp-for="Input.FirstName" />
+                <span asp-validation-for="Input.FirstName" class="error-text"></span>
+            </label>
+            <label>
+                <span>Last name</span>
+                <input asp-for="Input.LastName" />
+            </label>
+        </div>
+        <div class="row">
+            <label>
+                <span>Mobile number</span>
+                <input asp-for="Input.Phone" type="tel" placeholder="(312) 555-0100" />
+                <span asp-validation-for="Input.Phone" class="error-text"></span>
+            </label>
+            <label>
+                <span>Account #</span>
+                <input asp-for="Input.AccountNumber" />
+            </label>
+        </div>
+        <label>
+            <span>Email</span>
+            <input asp-for="Input.Email" type="email" />
+            <span asp-validation-for="Input.Email" class="error-text"></span>
+        </label>
+        <label>
+            <span>Notes</span>
+            <textarea asp-for="Input.Notes" rows="3"></textarea>
+        </label>
+        <label class="check">
+            <input asp-for="Input.OptedOut" />
+            <span>Opted out of texts (no messages will be sent)</span>
+        </label>
+        @if (Model.AllGroups.Any())
+        {
+            <fieldset class="radios">
+                <legend>Recipient lists · <a href="/Groups">manage</a></legend>
+                <div class="check-grid">
+                    @foreach (var g in Model.AllGroups)
+                    {
+                        <label class="check"><input type="checkbox" name="GroupIds" value="@g.Id" checked="@Model.GroupIds.Contains(g.Id)" /> <span>@g.Name</span></label>
+                    }
+                </div>
+            </fieldset>
+        }
+        @if (!isNew && Model.Existing!.OptedOutAtUtc is { } oo)
+        {
+            <p class="muted small">Opted out @Time.Local(oo)</p>
+        }
+        <div class="form-foot">
+            <button class="btn primary">Save</button>
+            <a class="btn subtle" href="/Clients">Cancel</a>
+        </div>
+    </form>
+
+    @if (!isNew)
+    {
+        <aside class="card">
+            <h3>Record</h3>
+            <dl class="facts">
+                <dt>Created</dt><dd>@Time.Local(Model.Existing!.CreatedAtUtc) by @Model.Existing.CreatedBy</dd>
+                @if (Model.Existing.UpdatedAtUtc is { } u)
+                {
+                    <dt>Updated</dt><dd>@Time.Local(u) by @Model.Existing.UpdatedBy</dd>
+                }
+                <dt>Messages</dt><dd>@Model.MessageCount</dd>
+            </dl>
+
+            <h3>Merge into another client</h3>
+            <p class="muted small">Moves this record's texts and notes into the chosen client, then removes this record.
+                Use it when an unknown number turns out to belong to an existing client.</p>
+            <form method="post" asp-page-handler="Merge" asp-route-id="@Model.Id" id="merge-form">
+                <input type="search" id="merge-search" placeholder="Search clients…" autocomplete="off" />
+                <ul id="merge-results" class="pick-list"></ul>
+                <input type="hidden" name="MergeIntoId" id="merge-id" />
+                <button class="btn" id="merge-btn" disabled>Merge</button>
+            </form>
+
+            @if (Model.MessageCount == 0 && Model.IsAdmin)
+            {
+                <h3>Delete</h3>
+                <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Id" onsubmit="return confirm('Delete this client?')">
+                    <button class="btn danger">Delete client</button>
+                </form>
+            }
+        </aside>
+    }
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const s = document.getElementById("merge-search");
+    if (!s) return;
+    const list = document.getElementById("merge-results"), hid = document.getElementById("merge-id"),
+          btn = document.getElementById("merge-btn"), self = @(Model.Id ?? 0);
+    let t;
+    s.addEventListener("input", () => {
+        clearTimeout(t); hid.value = ""; btn.disabled = true;
+        t = setTimeout(async () => {
+            const q = s.value.trim();
+            if (q.length < 2) { list.innerHTML = ""; return; }
+            const rows = (await TT.api("/api/clients/search?q=" + encodeURIComponent(q))).filter(r => r.id !== self);
+            list.innerHTML = rows.map(r => `<li data-id="${r.id}"><b>${TT.esc(r.name)}</b> <span class="muted">${TT.esc(r.phone)}</span></li>`).join("")
+                || `<li class="muted">No matches.</li>`;
+        }, 200);
+    });
+    list.addEventListener("click", e => {
+        const li = e.target.closest("li[data-id]"); if (!li) return;
+        list.querySelectorAll("li").forEach(x => x.classList.remove("active"));
+        li.classList.add("active"); hid.value = li.dataset.id; btn.disabled = false;
+    });
+    document.getElementById("merge-form").addEventListener("submit", e => {
+        if (!confirm("Move all texts into the selected client and remove this record?")) e.preventDefault();
+    });
+})();
+</script>
+}

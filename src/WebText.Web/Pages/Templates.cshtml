@@ -1,0 +1,53 @@
+@page
+@model WebText.Web.Pages.TemplatesModel
+@{
+    ViewData["Title"] = "Templates";
+}
+
+<div class="page-head"><h1>Message templates</h1></div>
+<p class="muted">Reusable texts everyone in the office can insert. Merge fields: <code>{FirstName}</code> <code>{LastName}</code> <code>{FullName}</code>.
+    Avoid putting sensitive details (SSNs, account numbers, balances, passwords) in texts.</p>
+
+<div class="two-col">
+    <div>
+        <table class="grid">
+            <thead><tr><th>Name</th><th>Text</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var t in Model.Items)
+                {
+                    <tr class="@(t.IsActive ? "" : "inactive")">
+                        <td class="nowrap"><b>@t.Name</b>@if (!t.IsActive) { <span class="tag">hidden</span> }</td>
+                        <td>@t.Body</td>
+                        <td class="nowrap right">
+                            @if (Model.CanEdit)
+                            {
+                            <a class="btn small" href="?edit=@t.Id">Edit</a>
+                            <form method="post" asp-page-handler="Toggle" asp-route-id="@t.Id" class="inline">
+                                <button class="btn small subtle">@(t.IsActive ? "Hide" : "Restore")</button>
+                            </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (!Model.CanEdit)
+    {
+        <div class="card"><p class="muted">Templates are managed by administrators. Insert them from the inbox or Bulk send.</p></div>
+    }
+    else
+    {
+    <form method="post" asp-page-handler="Save" class="card form">
+        <h3>@(Model.EditId == null ? "New template" : "Edit template")</h3>
+        <input type="hidden" asp-for="EditId" />
+        <label><span>Name</span><input asp-for="Name" /><span asp-validation-for="Name" class="error-text"></span></label>
+        <label><span>Text</span><textarea asp-for="Body" rows="6" maxlength="1600"></textarea><span asp-validation-for="Body" class="error-text"></span></label>
+        <div class="form-foot">
+            <button class="btn primary">Save</button>
+            @if (Model.EditId != null) { <a class="btn subtle" href="/Templates">Cancel</a> }
+        </div>
+    </form>
+    }
+</div>

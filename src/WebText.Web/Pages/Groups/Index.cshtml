@@ -1,0 +1,43 @@
+@page
+@model WebText.Web.Pages.Groups.IndexModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Recipient lists";
+}
+
+<div class="page-head"><h1>Recipient lists</h1></div>
+<p class="muted">Saved groups of clients you text together, e.g. "Waiting on paperwork", "Business clients", "Repairs ready for pickup".
+    Pick a list on <a href="/Bulk">Bulk send</a> to text everyone on it.</p>
+
+<div class="two-col">
+    <table class="grid">
+        <thead><tr><th>List</th><th>Clients</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var g in Model.Rows)
+            {
+                <tr>
+                    <td><a href="/Groups/Edit?id=@g.Id"><b>@g.Name</b></a>
+                        @if (!string.IsNullOrEmpty(g.Description)) { <div class="muted small">@g.Description</div> }</td>
+                    <td class="nowrap">@g.Members
+                        @if (g.OptedOut > 0) { <span class="tag bad" title="Opted-out clients are skipped when sending">@g.OptedOut opted out</span> }</td>
+                    <td class="nowrap small">@Time.Local(g.CreatedAtUtc, "M/d/yyyy")<div class="muted">@g.CreatedBy</div></td>
+                    <td class="nowrap right">
+                        <a class="btn small" href="/Groups/Edit?id=@g.Id&handler=Export">Export</a>
+                        <a class="btn small primary" href="/Bulk?group=@g.Id">Text this list</a>
+                    </td>
+                </tr>
+            }
+            @if (!Model.Rows.Any())
+            {
+                <tr><td colspan="4" class="muted center">No lists yet.</td></tr>
+            }
+        </tbody>
+    </table>
+
+    <form method="post" asp-page-handler="Create" class="card form">
+        <h3>New list</h3>
+        <label><span>Name</span><input asp-for="Name" placeholder="e.g. 2026 extensions" /><span asp-validation-for="Name" class="error-text"></span></label>
+        <label><span>Description (optional)</span><input asp-for="Description" /></label>
+        <div class="form-foot"><button class="btn primary">Create list</button></div>
+    </form>
+</div>

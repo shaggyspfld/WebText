@@ -1,0 +1,9 @@
+@page
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
+@{
+    ViewData["Title"] = "Error";
+}
+<h1>Something went wrong</h1>
+<p>The error has been logged. Please try again, and contact IT if it keeps happening.</p>
+<p class="muted">Request id: @(System.Diagnostics.Activity.Current?.Id ?? HttpContext.TraceIdentifier)</p>

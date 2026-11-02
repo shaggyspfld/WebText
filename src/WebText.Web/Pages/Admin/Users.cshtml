@@ -1,0 +1,224 @@
+@page
+@model WebText.Web.Pages.Admin.UsersModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Users";
+    Func<object?, object> codeField = @<text>
+        @if (Model.NeedCode)
+        {
+            <label><span>Your authenticator code</span>
+                <input name="AdminCode" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+        }
+    </text>;
+    string? tempUser = null, tempPw = null;
+    if (TempData["TempPassword"] is string tp && tp.Split('|', 2) is { Length: 2 } parts) { tempUser = parts[0]; tempPw = parts[1]; }
+}
+
+<div class="page-head"><h1>Users</h1></div>
+
+@if (Model.LocalSignIn)
+{
+    <p class="muted">People sign in with a user name, password and a code from an authenticator app. Members of
+        <b>@Model.UserGroupName</b> can use the app; members of <b>@Model.AdminGroupName</b> can also administer it.</p>
+}
+else
+{
+    <div class="banner info">Sign-in is currently <b>Windows</b> (Active Directory), so these accounts aren't used yet.
+        You can set them up now, then switch to Local on the <a href="/Admin/Settings#sign-in">Settings</a> page.
+        Add at least one person (yourself) to <b>@Model.AdminGroupName</b> first.</div>
+}
+
+@if (tempPw != null)
+{
+    <div class="banner warn">
+        Temporary password for <b>@tempUser</b>: <span class="temp-password">@tempPw</span><br />
+        Give it to them privately (in person or by phone, not by text or email together with the user name). It's shown only once.
+        At their next sign-in they'll choose their own password and set up their authenticator app.
+    </div>
+}
+@if (Model.Error != null) { <div class="flash error" role="alert">@Model.Error</div> }
+@if (Model.NeedCode)
+{
+    <p class="small muted">You'll be asked for your authenticator code with your first change; after that, not again for a few minutes.</p>
+}
+
+<div class="two-col">
+    <div>
+        <table class="grid">
+            <thead><tr><th>User</th><th>Groups</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var r in Model.Users)
+                {
+                    var u = r.User;
+                    <tr class="@(u.IsActive ? "" : "inactive")">
+                        <td class="nowrap"><b>@u.UserName</b>@if (User.LocalUserId() == u.Id) { <span class="tag">you</span> }
+                            @if (!string.IsNullOrEmpty(u.DisplayName)) { <div class="muted small">@u.DisplayName</div> }</td>
+                        <td class="small">@string.Join(", ", r.Groups)</td>
+                        <td class="small nowrap">
+                            @if (!u.IsActive) { <span class="tag">disabled</span> }
+                            @if (r.Locked) { <span class="tag bad">locked</span> }
+                            @if (string.IsNullOrEmpty(u.TotpSecretProtected)) { <span class="tag warn">no authenticator yet</span> }
+                            @if (u.MustChangePassword) { <span class="tag warn">temporary password</span> }
+                            @if (u.IsActive && !r.Locked && !string.IsNullOrEmpty(u.TotpSecretProtected) && !u.MustChangePassword) { <span>OK</span> }
+                        </td>
+                        <td class="small nowrap">@(u.LastSignInAtUtc is { } ls ? Time.Local(ls, "M/d/yyyy h:mm tt") : "never")</td>
+                        <td class="right"><a class="btn small" href="?edit=@u.Id">Manage</a></td>
+                    </tr>
+                }
+                @if (!Model.Users.Any())
+                {
+                    <tr><td colspan="5" class="muted center">No local users yet.</td></tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="card" style="margin-top:16px" id="log">
+            <h3>Security log</h3>
+            <p class="small muted">Sign-ins, failed attempts, lockouts, password and authenticator changes, and every change made on this page.</p>
+            <form method="get" class="inline-form" action="#log">
+                <input name="EventUser" value="@Model.EventUser" placeholder="Filter by user name" autocomplete="off" />
+                <button class="btn small">Filter</button>
+                @if (!string.IsNullOrWhiteSpace(Model.EventUser)) { <a class="btn small subtle" href="/Admin/Users#log">Clear</a> }
+                <a class="btn small subtle" asp-page-handler="EventsCsv" asp-route-EventUser="@Model.EventUser">Export CSV</a>
+            </form>
+            <table class="grid" style="margin-top:10px">
+                <thead><tr><th>When</th><th>Event</th><th>Account</th><th>By</th><th>From</th></tr></thead>
+                <tbody>
+                    @foreach (var e in Model.Events)
+                    {
+                        <tr>
+                            <td class="small nowrap">@Time.Local(e.AtUtc, "M/d/yyyy h:mm tt")</td>
+                            <td class="small"><b>@WebText.Web.Pages.Admin.UsersModel.EventLabel(e.Event)</b>
+                                @if (!string.IsNullOrEmpty(e.Details)) { <div class="muted" style="white-space:pre-line">@e.Details</div> }</td>
+                            <td class="small nowrap">@e.UserName</td>
+                            <td class="small nowrap">@(e.By == e.UserName ? "" : e.By)</td>
+                            <td class="small nowrap muted">@e.IpAddress</td>
+                        </tr>
+                    }
+                    @if (!Model.Events.Any()) { <tr><td colspan="5" class="muted center">Nothing recorded yet.</td></tr> }
+                </tbody>
+            </table>
+            @if (Model.Events.Count == 100) { <p class="small muted">Showing the latest 100. Export the CSV for everything.</p> }
+        </div>
+    </div>
+
+    <aside>
+        @if (Model.Editing is { } ed)
+        {
+            var isMe = User.LocalUserId() == ed.Id;
+            <form method="post" asp-page-handler="SaveUser" asp-route-id="@ed.Id" class="card form">
+                <h3>@ed.UserName</h3>
+                <p class="small muted">Added @Time.Local(ed.CreatedAtUtc, "M/d/yyyy") by @ed.CreatedBy
+                    @if (ed.UpdatedAtUtc is { } ua) { <span>· last changed @Time.Local(ua, "M/d/yyyy") by @ed.UpdatedBy</span> }</p>
+                <label><span>Name</span><input name="DisplayName" value="@Model.DisplayName" maxlength="200" /></label>
+                <label><span>Email (optional)</span><input name="Email" type="email" value="@Model.Email" maxlength="256" /></label>
+                <span class="small" style="font-weight:600">Groups</span>
+                @foreach (var g in Model.Groups)
+                {
+                    <label class="check"><input type="checkbox" name="GroupIds" value="@g.Group.Id" checked="@Model.EditingGroupIds.Contains(g.Group.Id)" />
+                        <span>@g.Group.Name</span></label>
+                }
+                <label class="check"><input type="checkbox" name="IsActive" value="true" checked="@Model.IsActive" disabled="@isMe" />
+                    <span>Account enabled</span></label>
+                <input type="hidden" name="IsActive" value="@(isMe ? "true" : "false")" />
+                @codeField(null)
+                <div class="form-foot">
+                    <button class="btn primary">Save</button>
+                    <a class="btn subtle" href="/Admin/Users">Close</a>
+                </div>
+            </form>
+
+            @if (!isMe)
+            {
+                <div class="card form" style="margin-top:16px">
+                    <h3>Sign-in help</h3>
+                    <form method="post" asp-page-handler="ResetPassword" asp-route-id="@ed.Id"
+                          onsubmit="return confirm('Give @ed.UserName a new temporary password? Their current password stops working.')">
+                        <p class="small muted">Forgot their password: issue a temporary one. They choose a new password at next sign-in.</p>
+                        @codeField(null)
+                        <button class="btn">Reset password</button>
+                    </form>
+                    <hr />
+                    <form method="post" asp-page-handler="ResetAuthenticator" asp-route-id="@ed.Id"
+                          onsubmit="return confirm('Remove @ed.UserName’s authenticator? They will set up a new one at next sign-in.')">
+                        <p class="small muted">Lost or replaced their phone: remove their authenticator. They set up a new one at next sign-in
+                            (with their password), so make sure it's really them asking.</p>
+                        @codeField(null)
+                        <button class="btn">Reset authenticator</button>
+                    </form>
+                    @if (Model.Users.FirstOrDefault(x => x.User.Id == ed.Id)?.Locked == true)
+                    {
+                        <hr />
+                        <form method="post" asp-page-handler="Unlock" asp-route-id="@ed.Id">
+                            <p class="small muted">Locked after too many failed attempts until @Time.Local(ed.LockedUntilUtc, "h:mm tt").</p>
+                            @codeField(null)
+                            <button class="btn">Unlock now</button>
+                        </form>
+                    }
+                    <hr />
+                    <form method="post" asp-page-handler="DeleteUser" asp-route-id="@ed.Id"
+                          onsubmit="return confirm('Delete @ed.UserName? Disabling keeps the account for later; deleting can’t be undone.')">
+                        <p class="small muted">Prefer "Account enabled" off for people who leave. Texts they sent keep their user name either way.</p>
+                        @codeField(null)
+                        <button class="btn subtle">Delete user</button>
+                    </form>
+                </div>
+            }
+        }
+        else
+        {
+            <form method="post" asp-page-handler="CreateUser" class="card form">
+                <h3>Add a user</h3>
+                <label><span>User name</span>
+                    <input name="NewUserName" value="@Model.NewUserName" maxlength="64" placeholder="e.g. jsmith" autocapitalize="none" spellcheck="false" required /></label>
+                <label><span>Name</span><input name="DisplayName" value="@Model.DisplayName" maxlength="200" placeholder="e.g. Jane Smith" /></label>
+                <label><span>Email (optional)</span><input name="Email" type="email" value="@Model.Email" maxlength="256" /></label>
+                <span class="small" style="font-weight:600">Groups</span>
+                @foreach (var g in Model.Groups)
+                {
+                    <label class="check"><input type="checkbox" name="GroupIds" value="@g.Group.Id" checked="@Model.EditingGroupIds.Contains(g.Group.Id)" />
+                        <span>@g.Group.Name</span></label>
+                }
+                @codeField(null)
+                <button class="btn primary">Add user</button>
+                <p class="small muted">A temporary password is created and shown once. At first sign-in they choose their own password
+                    and set up an authenticator app.</p>
+            </form>
+        }
+
+        <div class="card form" style="margin-top:16px">
+            <h3>Groups</h3>
+            <table class="grid">
+                <tbody>
+                    @foreach (var g in Model.Groups)
+                    {
+                        var access = string.Equals(g.Group.Name, Model.UserGroupName, StringComparison.OrdinalIgnoreCase) ? "can use the app"
+                            : string.Equals(g.Group.Name, Model.AdminGroupName, StringComparison.OrdinalIgnoreCase) ? "can administer the app" : null;
+                        <tr>
+                            <td><b>@g.Group.Name</b> <span class="muted small">(@g.Members)</span>
+                                @if (access != null) { <div class="small">@access</div> }
+                                else if (!string.IsNullOrEmpty(g.Group.Description)) { <div class="muted small">@g.Group.Description</div> }</td>
+                            <td class="right">
+                                @if (access == null)
+                                {
+                                    <form method="post" asp-page-handler="DeleteGroup" asp-route-id="@g.Group.Id" class="inline"
+                                          onsubmit="return confirm('Delete the group @g.Group.Name? Its members stay; they just leave the group.')">
+                                        @if (Model.NeedCode) { <input name="AdminCode" class="inline-select" inputmode="numeric" maxlength="7" placeholder="code" required /> }
+                                        <button class="btn small subtle">Delete</button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <form method="post" asp-page-handler="CreateGroup" style="margin-top:12px">
+                <label><span>New group</span><input name="GroupName" maxlength="128" required /></label>
+                <label><span>Description (optional)</span><input name="GroupDescription" maxlength="500" /></label>
+                @codeField(null)
+                <button class="btn">Add group</button>
+            </form>
+            <p class="small muted">Only the two groups named on the Settings page grant access. Other groups are for your own organising.</p>
+        </div>
+    </aside>
+</div>

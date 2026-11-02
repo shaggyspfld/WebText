@@ -1,0 +1,166 @@
+@page
+@model WebText.Web.Pages.Admin.BackupModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Backup & restore";
+    string? Err(string k) => Model.Errors.TryGetValue(k, out var e) ? e : null;
+}
+
+<div class="page-head"><h1>Backup &amp; restore</h1></div>
+<p class="muted">Move the whole setup to a new server, or keep a copy somewhere safe. A backup holds every setting (including
+    the provider API keys), local users and groups, clients, recipient lists, templates and auto-replies, and optionally
+    the text history and audit logs.</p>
+
+@if (Model.Restored is { } r)
+{
+    <div class="flash">
+        Restored: @r.Settings settings, @r.Users local users in @r.Groups groups, @r.Clients clients, @r.Lists lists,
+        @r.Templates templates, @r.AutoReplies auto-replies and @r.Messages texts.
+        Check the <a href="/Admin/Settings">Settings</a> page, especially the webhook URLs, which may need the new server's host name.
+        @foreach (var w in r.Warnings) { <div class="small" style="margin-top:4px">⚠ @w</div> }
+    </div>
+}
+
+<section class="card" style="margin-bottom:16px" id="scheduled">
+    <h3>Scheduled backups</h3>
+    @if (Err("schedule") is { } es) { <div class="flash error" role="alert">@es</div> }
+    @if (Model.Schedule.Enabled)
+    {
+        <p>On: <b>@Model.Schedule.Describe()</b> (office time) to <code>@Model.Schedule.Folder</code>,
+            @(Model.Schedule.Timestamp ? $"a dated file each time, keeping {(Model.Schedule.KeepCount == 0 ? "all of them" : "the newest " + Model.Schedule.KeepCount)}" : "replacing one file each time")@(Model.Schedule.IncludeHistory ? ", with text history" : "").
+            @if (Model.NextRunLocal is { } nx) { <span>Next: <b>@nx.ToString("ddd M/d h:mm tt")</b>.</span> }</p>
+    }
+    else
+    {
+        <p class="muted">Off. Turn them on and choose the days, time and folder under <a href="/Admin/Settings#scheduled">Settings → Scheduled backups</a>.</p>
+    }
+    <form method="post" asp-page-handler="RunNow" class="inline-form">
+        @if (Model.NeedCode) { <input name="AdminCode" class="inline-select" inputmode="numeric" maxlength="7" placeholder="authenticator code" required /> }
+        <button class="btn" disabled="@(string.IsNullOrEmpty(Model.Schedule.Password))">Back up to the folder now</button>
+        <span class="small muted">Uses the scheduled-backup settings; a good way to test the folder and its permissions.</span>
+    </form>
+    @if (Model.Runs.Any())
+    {
+        <table class="grid" style="margin-top:12px">
+            <thead><tr><th>When</th><th>Type</th><th>Result</th><th class="num">Size</th></tr></thead>
+            <tbody>
+                @foreach (var run in Model.Runs)
+                {
+                    <tr>
+                        <td class="small nowrap">@Time.Local(run.StartedAtUtc, "M/d/yyyy h:mm tt")</td>
+                        <td class="small nowrap">@(run.ScheduledForUtc != null ? "scheduled" : "manual, " + run.StartedBy) <span class="muted">on @run.Server</span></td>
+                        <td class="small">
+                            @if (run.Success == true) { <span>✓ @run.FilePath</span> }
+                            else if (run.Success == false) { <span class="error-text">✗ @run.Error</span> }
+                            else { <span class="muted">running…</span> }
+                        </td>
+                        <td class="small num nowrap">@(run.SizeBytes is { } b ? (b / 1024).ToString("N0") + " KB" : "")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<div class="two-col">
+    <form method="post" asp-page-handler="Create" class="card form" autocomplete="off">
+        <h3>Make a backup</h3>
+        @if (Err("create") is { } ec) { <div class="flash error" role="alert">@ec</div> }
+        <p class="small muted">This server has @Model.ClientCount.ToString("N0") clients, @Model.MessageCount.ToString("N0") texts and
+            @Model.LocalUserCount local user@(Model.LocalUserCount == 1 ? "" : "s").</p>
+
+        <label class="check"><input type="checkbox" name="IncludeHistory" value="true" checked="@Model.IncludeHistory" />
+            <span>Include the text history (every text and note in every client's thread)</span></label>
+        <input type="hidden" name="IncludeHistory" value="false" />
+        <label class="check"><input type="checkbox" name="IncludeLogs" value="true" checked="@Model.IncludeLogs" />
+            <span>Include the audit logs (security log, settings and auto-reply change history)</span></label>
+        <input type="hidden" name="IncludeLogs" value="false" />
+
+        <label><span>Backup password (at least 12 characters)</span>
+            <input name="BackupPassword" type="password" autocomplete="new-password" minlength="12" required /></label>
+        <label><span>Type it again</span>
+            <input name="ConfirmPassword" type="password" autocomplete="new-password" required /></label>
+        @if (Model.NeedCode)
+        {
+            <label><span>Your authenticator code</span>
+                <input name="AdminCode" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+        }
+        <button class="btn primary">Download backup</button>
+        <ul class="small muted" style="margin-top:12px">
+            <li>The file is encrypted with this password. Without it the backup can't be opened, by anyone, including you,
+                so record it somewhere safe (e.g. your password manager).</li>
+            <li>It contains client details, API keys, password hashes and authenticator keys. Store it like you'd store
+                client files. Making a backup is recorded in the security log.</li>
+            <li>SSN-like numbers in the logs are already masked; texts themselves are copied as they are.</li>
+        </ul>
+    </form>
+
+    <form method="post" asp-page-handler="Restore" enctype="multipart/form-data" class="card form" id="restore-form" autocomplete="off">
+        <h3>Restore a backup</h3>
+        @if (Err("restore") is { } er) { <div class="flash error" role="alert">@er</div> }
+        <div class="banner warn small">Restoring <b>replaces</b> the settings, local users and groups, clients, lists, templates and
+            auto-replies on this server, and its text history, with what's in the backup. It's meant for a new install. This
+            server's encryption keys and its own security log are kept.</div>
+
+        <label><span>Backup file (@WebText.Web.Services.BackupService.FileExtension)</span>
+            <input type="file" name="BackupFile" id="bk-file" accept="@WebText.Web.Services.BackupService.FileExtension" required /></label>
+        <label><span>Backup password</span>
+            <input name="RestorePassword" id="bk-pass" type="password" autocomplete="off" required /></label>
+        <button type="button" class="btn" id="bk-check">Check the file</button>
+        <div id="bk-summary" class="small" style="margin:10px 0" hidden></div>
+
+        <label class="check"><input type="checkbox" name="RestoreHistory" value="true" checked="@Model.RestoreHistory" />
+            <span>Restore the text history, if the backup has it</span></label>
+        <input type="hidden" name="RestoreHistory" value="false" />
+        <label class="check"><input type="checkbox" name="RestoreLogs" value="true" checked="@Model.RestoreLogs" />
+            <span>Restore the audit logs, if the backup has them</span></label>
+        <input type="hidden" name="RestoreLogs" value="false" />
+        <label class="check"><input type="checkbox" name="KeepSignInMethod" value="true" checked="@Model.KeepSignInMethod" />
+            <span>Keep this server's sign-in method (now: <b>@Model.CurrentSignIn</b>)</span></label>
+        <input type="hidden" name="KeepSignInMethod" value="false" />
+        <p class="small muted">Leave that ticked unless this server should switch to the backup's method: e.g. a server outside your domain
+            can't use Windows sign-in.</p>
+
+        <label><span>Type REPLACE to confirm</span><input name="Confirm" autocomplete="off" required /></label>
+        @if (Model.NeedCode)
+        {
+            <label><span>Your authenticator code</span>
+                <input name="AdminCode" class="code-input" inputmode="numeric" maxlength="7" autocomplete="one-time-code" required /></label>
+        }
+        <button class="btn primary">Restore and replace</button>
+        <p class="small muted">After restoring with Local sign-in, everyone (including you) signs in again with the accounts from the
+            backup: same passwords and authenticator apps. Texts that were still waiting to send in the backup are not sent from here.</p>
+    </form>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const btn = document.getElementById("bk-check"), out = document.getElementById("bk-summary");
+    btn.addEventListener("click", async () => {
+        const form = document.getElementById("restore-form");
+        const file = document.getElementById("bk-file").files[0];
+        if (!file) { out.hidden = false; out.textContent = "Choose a backup file first."; return; }
+        const data = new FormData();
+        data.append("BackupFile", file);
+        data.append("RestorePassword", document.getElementById("bk-pass").value);
+        data.append("__RequestVerificationToken", form.querySelector("input[name=__RequestVerificationToken]").value);
+        out.hidden = false; out.textContent = "Checking…"; btn.disabled = true;
+        try {
+            const res = await fetch("?handler=Inspect", { method: "POST", body: data, credentials: "same-origin" });
+            const s = await res.json();
+            if (!s.ok) { out.innerHTML = `<div class="flash error">${TT.esc(s.error)}</div>`; return; }
+            const n = v => (v ?? 0).toLocaleString();
+            out.innerHTML = `<div class="banner info">Backup made ${TT.esc(new Date(s.created).toLocaleString())} on <b>${TT.esc(s.sourceServer)}</b>
+                by ${TT.esc(s.createdBy)}.<br>${n(s.clients)} clients, ${n(s.lists)} lists, ${n(s.localUsers)} local users in ${n(s.localGroups)} groups,
+                ${n(s.templates)} templates, ${n(s.autoReplies)} auto-replies, ${n(s.settings)} settings.<br>
+                Text history: ${s.messages == null ? "not included" : n(s.messages) + " texts"}. Audit logs: ${s.includesLogs ? "included" : "not included"}.<br>
+                Sign-in method: ${TT.esc(s.signInMethod)}. Texting provider: ${TT.esc(s.provider === "VoipMs" ? "VoIP.ms" : s.provider)}.
+                ${s.secretsNotIncluded.length ? `<br>⚠ Not included (re-enter after restoring): ${TT.esc(s.secretsNotIncluded.join(", "))}` : ""}</div>`;
+        } catch (e) {
+            out.innerHTML = `<div class="flash error">Couldn't check the file: ${TT.esc(e.message)}</div>`;
+        } finally { btn.disabled = false; }
+    });
+})();
+</script>
+}

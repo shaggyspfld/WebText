@@ -1,0 +1,81 @@
+@page
+@model WebText.Web.Pages.Account.LoginModel
+@using WebText.Web.Pages.Account
+@{
+    ViewData["Title"] = "Sign in";
+    Layout = "_PlainLayout";
+}
+
+<div class="card form">
+    @if (Model.Info != null) { <div class="flash">@Model.Info</div> }
+    @if (Model.Error != null) { <div class="flash error" role="alert">@Model.Error</div> }
+
+    @switch (Model.Current)
+    {
+        case LoginModel.Step.WindowsMode:
+            <h1>Windows sign-in</h1>
+            <p>This site signs you in automatically with your Windows account.</p>
+            <p><a class="btn primary" href="/">Continue</a></p>
+            break;
+
+        case LoginModel.Step.Password:
+            <h1>Sign in</h1>
+            <form method="post" asp-page-handler="Password">
+                <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
+                <label><span>User name</span>
+                    <input name="UserName" value="@Model.UserName" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus /></label>
+                <label><span>Password</span>
+                    <input name="Password" type="password" autocomplete="current-password" required /></label>
+                <button class="btn primary">Next</button>
+            </form>
+            <p class="small muted" style="margin-top:12px">Forgot your password or lost your phone? Ask an administrator to reset it.</p>
+            break;
+
+        case LoginModel.Step.Code:
+            <h1>Enter your code</h1>
+            <p class="muted">Open your authenticator app and enter the 6-digit code for <b>@Model.UserNameShown</b>.</p>
+            <form method="post" asp-page-handler="Code">
+                <label><span>Code</span>
+                    <input name="Code" class="code-input" inputmode="numeric" pattern="[0-9 ]*" maxlength="7"
+                           autocomplete="one-time-code" required autofocus /></label>
+                <button class="btn primary">Sign in</button>
+            </form>
+            <form method="post" asp-page-handler="Cancel" style="margin-top:10px"><button class="btn subtle small">Use a different account</button></form>
+            break;
+
+        case LoginModel.Step.Enroll:
+            <h1>Set up your authenticator</h1>
+            <p class="muted">Signing in to this app needs a code from an authenticator app as well as your password.
+                This is a one-time setup for <b>@Model.UserNameShown</b>.</p>
+            <partial name="_AuthenticatorSetup" model="(Model.EnrollUri!, Model.EnrollKey!)" />
+            <form method="post" asp-page-handler="Enroll">
+                <label><span>Code from the app</span>
+                    <input name="Code" class="code-input" inputmode="numeric" pattern="[0-9 ]*" maxlength="7"
+                           autocomplete="one-time-code" required autofocus /></label>
+                <button class="btn primary">Finish setup</button>
+            </form>
+            <form method="post" asp-page-handler="Cancel" style="margin-top:10px"><button class="btn subtle small">Cancel</button></form>
+            break;
+
+        case LoginModel.Step.NewPassword:
+            <h1>Choose your password</h1>
+            <p class="muted">You signed in with a temporary password. Choose your own to finish signing in.</p>
+            <form method="post" asp-page-handler="NewPassword">
+                <input name="UserName" value="@Model.UserNameShown" autocomplete="username" hidden />
+                <label><span>New password (at least @Model.MinPasswordLength characters)</span>
+                    <input name="NewPassword" type="password" autocomplete="new-password" minlength="@Model.MinPasswordLength" required autofocus /></label>
+                <label><span>Type it again</span>
+                    <input name="ConfirmPassword" type="password" autocomplete="new-password" required /></label>
+                <button class="btn primary">Save and sign in</button>
+            </form>
+            break;
+    }
+</div>
+
+@section Scripts {
+    @if (Model.Current == LoginModel.Step.Enroll)
+    {
+        <script src="~/lib/qrcode-generator/qrcode.js"></script>
+        <script src="~/js/qr.js" asp-append-version="true"></script>
+    }
+}

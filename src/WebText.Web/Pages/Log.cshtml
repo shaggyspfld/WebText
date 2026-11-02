@@ -1,0 +1,89 @@
+@page
+@model WebText.Web.Pages.LogModel
+@inject WebText.Web.Services.TimeDisplay Time
+@{
+    ViewData["Title"] = "Message log";
+    var pages = (int)Math.Ceiling(Model.Total / (double)WebText.Web.Pages.LogModel.PageSize);
+    var exportUrl = Model.PageUrl(1).Replace("&p=1", "").Replace("?p=1", "?");
+    exportUrl += (exportUrl.EndsWith("?") ? "" : "&") + "handler=Export";
+}
+
+<div class="page-head">
+    <h1>Message log</h1>
+    <div class="actions"><a class="btn" href="@exportUrl">Export CSV</a></div>
+</div>
+
+@if (Model.Batch != null)
+{
+    <div class="banner info">
+        Showing one bulk send.
+        @foreach (var kv in Model.BatchSummary.OrderBy(k => k.Key))
+        {
+            <span class="tag">@kv.Key: @kv.Value</span>
+        }
+        <a href="/Log">Show all messages</a> · refresh to update statuses.
+    </div>
+}
+
+<form method="get" class="filters">
+    <input type="search" name="q" value="@Model.Q" placeholder="Text, client name, account #, phone" />
+    <select name="sentBy">
+        <option value="">Any staff member</option>
+        @foreach (var u in Model.Users)
+        {
+            <option value="@u" selected="@(u == Model.SentBy)">@u</option>
+        }
+    </select>
+    <select name="direction">
+        <option value="">Texts &amp; notes</option>
+        <option value="Outbound" selected="@(Model.Direction == "Outbound")">Sent</option>
+        <option value="Inbound" selected="@(Model.Direction == "Inbound")">Received</option>
+        <option value="Note" selected="@(Model.Direction == "Note")">Notes</option>
+    </select>
+    <select name="status">
+        <option value="">Any status</option>
+        <option value="delivered" selected="@(Model.Status == "delivered")">Delivered</option>
+        <option value="failed" selected="@(Model.Status == "failed")">Failed / blocked</option>
+        <option value="pending" selected="@(Model.Status == "pending")">Waiting to send</option>
+    </select>
+    <label class="inline">From <input type="date" name="from" value="@(Model.From?.ToString("yyyy-MM-dd"))" /></label>
+    <label class="inline">To <input type="date" name="to" value="@(Model.To?.ToString("yyyy-MM-dd"))" /></label>
+    @if (Model.Batch != null) { <input type="hidden" name="batch" value="@Model.Batch" /> }
+    <button class="btn">Filter</button>
+    <a class="btn subtle" href="/Log">Reset</a>
+</form>
+
+<p class="muted small">@Model.Total.ToString("N0") result@(Model.Total == 1 ? "" : "s")</p>
+
+<table class="grid log">
+    <thead><tr><th>When</th><th>Client</th><th></th><th>Message</th><th>Staff</th><th>Status</th></tr></thead>
+    <tbody>
+        @foreach (var m in Model.Rows)
+        {
+            <tr class="dir-@m.Direction.ToString().ToLowerInvariant()">
+                <td class="nowrap">@Time.Local(m.CreatedAtUtc)</td>
+                <td class="nowrap"><a href="/?client=@m.ClientId">@m.Client.DisplayName</a>
+                    <div class="muted small">@PhoneNumber.Format(m.Client.PhoneE164)</div></td>
+                <td class="nowrap">@(m.Direction switch { MessageDirection.Outbound => "→ Sent", MessageDirection.Inbound => "← Received", _ => "Note" })</td>
+                <td class="body">@m.Body</td>
+                <td class="nowrap">@m.SentBy</td>
+                <td class="nowrap">
+                    <span class="status @(MessageStatus.IsFailure(m.Status) ? "bad" : m.Status == MessageStatus.Delivered ? "ok" : "")" title="@m.ErrorDetail">@m.Status</span>
+                </td>
+            </tr>
+        }
+        @if (!Model.Rows.Any())
+        {
+            <tr><td colspan="6" class="muted center">No messages match.</td></tr>
+        }
+    </tbody>
+</table>
+
+@if (pages > 1)
+{
+    <nav class="pager">
+        @if (Model.P > 1) { <a class="btn small" href="@Model.PageUrl(Model.P - 1)">← Newer</a> }
+        <span class="muted small">Page @Model.P of @pages</span>
+        @if (Model.P < pages) { <a class="btn small" href="@Model.PageUrl(Model.P + 1)">Older →</a> }
+    </nav>
+}
